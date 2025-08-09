@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Analysis Result</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .result-box { border: 1px solid #ccc; padding: 1em; white-space: pre-wrap; background-color: #f9f9f9; }
+        .error { border-color: red; color: red; }
+        a { margin-top: 1em; display: inline-block; }
+    </style>
+</head>
+<body>
+    <h1>Analysis Result</h1>
+
+    <!-- 
+      This is a Jinja2 template. It checks if an 'error' variable was passed.
+      If so, it displays the error. Otherwise, it displays the successful result.
+    -->
+    {% if error %}
+        <h2>An Error Occurred</h2>
+        <div class="result-box error">
+            {{ error }}
+        </div>
+    {% else %}
+        <h2>Success!</h2>
+        <div class="result-box">
+            <pre>{{ result | tojson(indent=4) }}</pre>
+        </div>
+    {% endif %}
+
+    <br>
+    <a href="/upload">Analyze another file</a>
+</body>
+</html>

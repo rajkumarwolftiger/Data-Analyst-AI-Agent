@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Task</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 5em; }
+        form { border: 1px solid #ccc; padding: 2em; display: inline-block; }
+        input { margin-bottom: 1em; }
+        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Upload Your Task File</h1>
+    <!-- 
+      This form sends a POST request to our new /analyze route.
+      enctype="multipart/form-data" is REQUIRED for file uploads.
+    -->
+    <form action="/analyze" method="post" enctype="multipart/form-data">
+      <label for="file">Choose your questions.txt file:</label><br>
+      <input type="file" name="questions_txt" id="file" required>
+      <br>
+      <button type="submit">Analyze</button>
+    </form>
+</body>
+</html>
