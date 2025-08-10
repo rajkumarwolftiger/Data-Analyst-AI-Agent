@@ -66,8 +66,12 @@ def run_pandas_web_analysis(task_description):
             df[col] = df[col].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    df.dropna(subset=['rank', 'year', 'worldwide_gross'], inplace=True)
+    # ========================================================================= #
+    # --- THE FIX: Add 'peak' to the list of columns to check for NAs ---       #
+    # ========================================================================= #
+    df.dropna(subset=['rank', 'peak', 'year', 'worldwide_gross'], inplace=True)
 
+    # Now that all NAs are gone, this conversion will succeed.
     for col in ['rank', 'peak', 'year']:
         if col in df.columns:
             df.loc[:, col] = df[col].astype(int)
@@ -92,7 +96,6 @@ def run_pandas_web_analysis(task_description):
     - Respond with ONLY the raw Python code.
     """
     response = client.chat.completions.create(
-        # CHANGED: Switched back to the more powerful GPT-4o model
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}]
     )
@@ -110,7 +113,7 @@ def run_pandas_web_analysis(task_description):
 
 
 # ========================================================================= #
-# TOOL 2: SPECIALIST FOR DUCKDB S3 ANALYSIS                                 #
+# TOOL 2: SPECIALIST FOR DUCKDB S3 ANALYSIS (Unchanged)                     #
 # ========================================================================= #
 def run_duckdb_s3_analysis(task_description):
     print("--- ROUTER: Selected DuckDB S3 Analyzer Tool ---")
@@ -141,7 +144,6 @@ def run_duckdb_s3_analysis(task_description):
     - Respond with ONLY the raw Python code.
     """
     response = client.chat.completions.create(
-        # CHANGED: Switched back to the more powerful GPT-4o model
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}]
     )
