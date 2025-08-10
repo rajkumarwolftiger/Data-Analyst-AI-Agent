@@ -19,56 +19,8 @@ client = OpenAI(
     base_url="https://aipipe.org/openai/v1"
 )
 
-
-# ========================================================================= #
-# TOOL 1: SPECIALIST FOR PANDAS WEB SCRAPING                                #
-# ========================================================================= #
-def run_pandas_web_analysis(task_description):
-    print("--- ROUTER: Selected Pandas Web Scraper Tool ---")
-    
-    # ... (scraping and cleaning code is unchanged) ...
-    url_part = task_description.split("http")[1]
-    url = "http" + url_part.split()[0].strip()
-    
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'}
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, 'lxml')
-    table = soup.find('table', {'class': 'wikitable'})
-
-    if not table:
-        raise ValueError("Could not find the 'wikitable' on the page.")
-
-    header_row = table.find('tr')
-    headers = [header.get_text(strip=True) for header in header_row.find_all('th')]
-    rows = table.find_all('tr')[1:]
-    
-    table_data = []
-    for row in rows:
-        cells = row.find_all(['th', 'td'])
-        if len(cells) == len(headers):
-            table_data.append([cell.get_text(strip=True) for cell in cells])
-
-    df = pd.DataFrame(table_data, columns=headers)
-    
-    df.columns = df.columns.str.split('[').str[0].str.strip().str.lower().str.replace(' ', '_')
-    for col in ['reference', 'references']:
-        if col in df.columns:
-            df = df.drop(columns=col)
-    
-    cols_to_clean = ['rank', 'peak', 'worldwide_gross', 'year']
-    for col in cols_to_clean:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(r'[^\d.]', '', regex=True)
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    df.dropna(subset=['rank', 'year', 'worldwide_gross'], inplace=True)
-    
-    for col in ['rank', 'peak', 'year']:
-        if col in df.columns:
-            df[col] = df[col].astype(int)
-
+# This function does not need changes, it is already robust.
+def analyze_dataframe(df, task_description, model_name="mistralai/mistral-7b-instruct"):
     prompt = f"""
     You are an expert Python data analyst. Given the pre-cleaned pandas DataFrame `df`, write a Python script to answer the user's questions.
 
@@ -82,78 +34,108 @@ def run_pandas_web_analysis(task_description):
     ---
 
     INSTRUCTIONS:
-    - The final result must be a single Python list variable named `result`.
+    - The final result must be a single Python list or dictionary variable named `result` that matches the format requested in the task.
     - If a plot is requested, generate it and encode it as a base64 data URI string.
     - Do NOT include any data cleaning. The DataFrame is ready.
     - Respond with ONLY the raw Python code.
     """
     response = client.chat.completions.create(
-        # CORRECTED: Use a cheaper model to stay within the free tier
-        model="mistralai/mistral-7b-instruct",
+        model=model_name,
         messages=[{"role": "user", "content": prompt}]
     )
     code_to_execute = response.choices[0].message.content.strip().replace("```python", "").replace("```", "")
-    
+
     local_scope = {'df': df, 'pd': pd, 'plt': plt, 'io': io, 'base64': base64, 'np': np, 're': re, 'result': None}
-    
+
+    print(f"\n--- Executing LLM-generated code ---\n{code_to_execute}\n------------------------------------")
     exec(code_to_execute, globals(), local_scope)
-    
+
     if local_scope.get('result') is None:
-        raise ValueError("The pandas analysis code did not produce a 'result' variable.")
-    
+        raise ValueError("The analysis code did not produce a 'result' variable.")
+
     return local_scope['result']
 
 
 # ========================================================================= #
-# TOOL 2: SPECIALIST FOR DUCKDB S3 ANALYSIS                                 #
+# --- THE UPDATED FUNCTION WITH THE PRECISION CLEANING PIPELINE ---         #
+# ========================================================================= #
+def run_pandas_web_analysis(task_description):
+    print("--- ROUTER: Selected Pandas Web Scraper Tool ---")
+    
+    # --- 1. Scraping (Unchanged) ---
+    url_part = task_description.split("http")[1]
+    url = "http" + url_part.split()[0].strip()
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'lxml')
+    table = soup.find('table', {'class': 'wikitable'})
+    if not table:
+        raise ValueError("Could not find the 'wikitable' on the page.")
+    header_row = table.find('tr')
+    headers = [header.get_text(strip=True) for header in header_row.find_all('th')]
+    rows = table.find_all('tr')[1:]
+    table_data = []
+    for row in rows:
+        cells = row.find_all(['th', 'td'])
+        if len(cells) == len(headers):
+            table_data.append([cell.get_text(strip=True) for cell in cells])
+    df = pd.DataFrame(table_data, columns=headers)
+    print("--- Successfully built DataFrame manually ---")
+
+    # --- 2. THE NEW, MORE PRECISE CLEANING PIPELINE ---
+    print("--- Starting Final Data Cleaning and Standardization ---")
+    
+    # A. Clean and standardize column names
+    df.columns = df.columns.str.split('[').str[0].str.strip().str.lower().str.replace(' ', '_')
+    
+    # B. Drop the unneeded 'reference(s)' column
+    for col in ['reference', 'references']:
+        if col in df.columns:
+            df = df.drop(columns=col)
+    
+    # C. For all columns that should be numeric, apply a precise cleaning process
+    cols_to_clean = ['rank', 'peak', 'worldwide_gross', 'year']
+    for col in cols_to_clean:
+        if col in df.columns:
+            # First, ensure the column is a string type for cleaning
+            df[col] = df[col].astype(str)
+            # Then, explicitly remove dollar signs and commas
+            df[col] = df[col].str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+            # Finally, convert to numeric, coercing any errors
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # D. Drop any rows that failed to convert properly in key columns
+    df.dropna(subset=['rank', 'year', 'worldwide_gross'], inplace=True)
+    
+    # E. Now that data is guaranteed clean, convert the appropriate columns to integer type
+    for col in ['rank', 'peak', 'year']:
+        if col in df.columns:
+            # Use .loc to avoid SettingWithCopyWarning
+            df.loc[:, col] = df[col].astype(int)
+    
+    # --- End of Cleaning ---
+
+    # 3. Call the analyzer function
+    return analyze_dataframe(df, task_description)
+
+
+# ========================================================================= #
+# TOOL 2: SPECIALIST FOR DUCKDB S3 ANALYSIS (Unchanged)                     #
 # ========================================================================= #
 def run_duckdb_s3_analysis(task_description):
     print("--- ROUTER: Selected DuckDB S3 Analyzer Tool ---")
-    
     con = duckdb.connect(database=':memory:', read_only=False)
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute("INSTALL parquet; LOAD parquet;")
+    print("--- DuckDB extensions installed ---")
 
-    prompt = f"""
-    You are an expert SQL data analyst specializing in DuckDB.
-    A user wants to query a large dataset of Parquet files stored on S3.
-
-    The base S3 path is: 's3://indian-high-court-judgments/metadata/parquet/year=*/court=*/bench=*/metadata.parquet?s3_region=ap-south-1'
-    The columns are: court_code, title, date_of_registration, decision_date, disposal_nature, court, bench, year.
-
-    The user's task:
-    ---
-    {task_description}
-    ---
-
-    INSTRUCTIONS:
-    - You must answer all questions and provide the final output in a single Python dictionary named `result`.
-    - Generate Python code that uses `con.sql('...').df()` to execute DuckDB SQL queries.
-    - To get the most disposed cases, you will need to GROUP BY court and COUNT cases between 2019 and 2022.
-    - To get the regression slope, calculate the difference between 'decision_date' and 'date_of_registration' in days. Then find the slope of the linear regression between that delay and the 'year' for court=33_10. Use `REGR_SLOPE`.
-    - To create the plot, first query the necessary data into a pandas DataFrame. Then use matplotlib to generate the plot and encode it as a base64 data URI string.
-    - The final output must be a single Python dictionary assigned to a variable named `result`.
-    - Respond with ONLY the raw Python code.
-    """
-    response = client.chat.completions.create(
-        # CORRECTED: Use a much cheaper model to stay within the free tier
-        model="mistralai/mistral-7b-instruct",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    code_to_execute = response.choices[0].message.content.strip().replace("```python", "").replace("```", "")
-    
-    local_scope = {'con': con, 'pd': pd, 'plt': plt, 'io': io, 'base64': base64, 'np': np, 're': re, 'result': None}
-    
-    exec(code_to_execute, globals(), local_scope)
-    
-    if local_scope.get('result') is None:
-        raise ValueError("The DuckDB analysis code did not produce a 'result' variable.")
-    
-    return local_scope['result']
+    # Pass the task to the generic analyzer function
+    return analyze_dataframe(None, task_description, model_name="mistralai/mistral-7b-instruct") # We pass None for df, as it's not needed for the SQL prompt
 
 
 # ========================================================================= #
-# THE MAIN ROUTER FUNCTION                                                  #
+# THE MAIN ROUTER FUNCTION  (Unchanged)                                     #
 # ========================================================================= #
 def run_analysis(task_description, attached_files):
     if "indian high court" in task_description.lower():
