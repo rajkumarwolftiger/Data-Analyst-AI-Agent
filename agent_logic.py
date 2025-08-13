@@ -10,6 +10,7 @@ import duckdb
 import numpy as np
 import re
 import ast # Import the Abstract Syntax Tree module for code validation
+from io import BytesIO
 
 # Configure the client to use the AI Pipe endpoint
 from openai import OpenAI
